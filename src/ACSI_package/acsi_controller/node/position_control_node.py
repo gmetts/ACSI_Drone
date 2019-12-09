@@ -104,7 +104,8 @@ def spin_controller(current_pose,desired_pose,error_hist,integral): #
     #print(derivitive)
     return calculated_setpoint
 
-def altitude_controller(error, integral,derivitive):#
+def altitude_controller(error, integral,derivitive):#\
+
     thrust = 47000 + altitude_proportional(error) - altitude_derivitive(error,derivitive)
     if thrust >= 65535:
         thrust = 65534
@@ -114,14 +115,19 @@ def altitude_controller(error, integral,derivitive):#
     return thrust, integral
 
 def altitude_proportional(error):#
-    p = 25000/2 # original 1/1.5
+    p = 25000 # original 1/1.5
     return p * error[0].y
 
 def altitude_integral(error ,integral):#
-    i = 0
-
+    i = 25000/2/100
+    integral.y = integral.y + error[0].y*i
+    if(integral.y > 5000):
+        integral.y = 5000
+    elif(integral.y < -5000):
+        integral.y = -5000
+    return integral
 def altitude_derivitive(error ,derivitive):#
-    d = 25000*1.5
+    d = 25000*1
     return d * derivitive.y
 
 def yaw_controller(error, integral ,derivitive):#
@@ -160,43 +166,63 @@ def get_euler(orientation):
     return current_euler
 
 def position_controller(error,integral,derivitive):#
+    
 
     pitch_set = pitch_proportional(error) - pitch_derivitive(error,derivitive)
-    if pitch_set > 45:
-        pitch_set = 45
-
-    pitch_integral(error,integral)
+    if pitch_set > 25:
+        pitch_set = 25
+    if pitch_set < -25:
+        pitch_set = -25
 
     roll_set = roll_proportional(error) -  roll_derivitive(error,derivitive)
-    if roll_set > 45:
-        roll_set = 45
 
-    roll_integral(error,integral)
+    if roll_set > 25:
+        roll_set = 25
+    if roll_set < -25:
+        roll_set = -25
+
 
     return pitch_set, -roll_set, integral
 
 def pitch_proportional(error):# needs sat
-    p = .2 * 180 / pi
+    p = .24 * 180 / pi
+
     #sat
+    print(error[0].z)
     return p * error[0].z
 
 def pitch_integral(error,integral):#
-    i = 0
+    i = .005 * 180 / pi
+    integral.z = integral.z + error[0].z*i
+    if(integral.z > 10):
+        integral.z = 10
+    elif(integral.z < -10):
+        integral.z = -10
+    print(integral.z)
+    return integral
 
 def pitch_derivitive(error,derivitive):#
     d = .24 * 180 / pi
     return d * derivitive.z
 
 def roll_proportional(error):# needs sat
-    p = .2 * 180 / pi
+    p = .20 * 180 / pi
     #sat
+    print(error[0].x)
     return p * error[0].x
 
 def roll_integral(error,integral):#
-    i = 0
+    i = .005 * 180 / pi
+    integral.x = integral.x + error[0].z*i
 
+    if(integral.x > 10):
+        integral.x = 10
+    elif(integral.x < -10):
+        integral.x = -10
+    print(integral.x)
+    return integral
 def roll_derivitive(error,derivitive):#
-    d = .24 * 180 / pi
+    d = .18 * 180 / pi
     return d * derivitive.x
 
 def optitrack_callback(opti_message):#
@@ -227,18 +253,18 @@ if __name__ == '__main__':
     integral = Attitude_Error()
 
     hover_pose = Pose()
-    hover_pose.position.x = 0
-    hover_pose.position.y = 1.5
-    hover_pose.position.z = 0
+    hover_pose.position.x = -.7
+    hover_pose.position.y = 2
+    hover_pose.position.z = .5
     hover_pose.orientation.x = 0
     hover_pose.orientation.y = 0
     hover_pose.orientation.z = 0
     hover_pose.orientation.w = 1
 
     land_pose = Pose()
-    land_pose.position.x = 0
-    land_pose.position.y = -.5
-    land_pose.position.z = 0
+    land_pose.position.x = -.7
+    land_pose.position.y = 2
+    land_pose.position.z = .5
     land_pose.orientation.x = 0
     land_pose.orientation.y = 0
     land_pose.orientation.z = 0
@@ -247,24 +273,31 @@ if __name__ == '__main__':
     desired_pose = hover_pose
 
     r = rospy.Rate(100)
-    start_time = rospy.Time.now()
+    start_time = rospy.Time.now().secs
     sequence = 0
+    sequence2 = 0
+    sequence3 = 0
+    sequence4 = 0
+
     while not rospy.is_shutdown():
 
-        if(recieved_trajectory == True and recieved_optitrack == True and sequence < len(trajectory.poses) and rospy.Time.now().secs-start_time > 16):
+        current_setpoint = spin_controller(current_pose,desired_pose,error,integral)
+        if(recieved_trajectory == True and recieved_optitrack == True and sequence < len(trajectory.poses) and rospy.Time.now().secs-start_time > 5):
             print('Trajectory Started')
             desired_pose = trajectory.poses[sequence]
             sequence = sequence + 1
-        elif(recieved_trajectory == True and recieved_optitrack == True and sequence >= len(trajectory.poses)):
-            print('Holding end')
+        elif(recieved_trajectory == True and recieved_optitrack == True and sequence >= len(trajectory.poses) and sequence2 < 200):
+            print('Holding')
             desired_pose = trajectory.poses[-1]
-        elif rospy.Time.now().secs-start_time > 50:
+            sequence2 = sequence2 + 1
+        elif(sequence >= len(trajectory.poses) and sequence2 >= 200 and sequence3 < 500):
+            desired_pose = trajectory.poses[-1]
+            desired_pose.position.y = 2.5
+            sequence3 = sequence3 + 1
+        elif rospy.Time.now().secs-start_time > 25:
             print('landing')
-            land_pose.position.x = current_pose.position.x
-            land_pose.position.z = current_pose.position.z
-            land_pose.orientation.w = 1
-            desired_pose = land_pose
-        elif(recieved_trajectory == True and recieved_optitrack == True and sequence < len(trajectory.poses) and rospy.Time.now().secs-start_time < 16):
+            current_setpoint.thrust = 0
+        elif(recieved_trajectory == True and recieved_optitrack == True and sequence < len(trajectory.poses) and rospy.Time.now().secs-start_time < 10):
             print('Trajectory recieved, waiting to begin')
             desired_pose = hover_pose
         elif(recieved_trajectory == True and recieved_optitrack == False):
@@ -273,12 +306,14 @@ if __name__ == '__main__':
         elif(recieved_trajectory == False and recieved_optitrack == True):
             print('Waiting for Trajectory')
             desired_pose = hover_pose
+
+
         else:
             print('hovering')
             desired_pose = hover_pose
+
             
 
-        current_setpoint = spin_controller(current_pose,desired_pose,error,integral)
         setpoint_pub.publish(current_setpoint)
 
         r.sleep()
