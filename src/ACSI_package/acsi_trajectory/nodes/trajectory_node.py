@@ -53,11 +53,10 @@ if __name__ == '__main__':
 
 
         frequency =  100 #TODO: need 
-        total_time = 1 #TODO: needs to be updated to fit goal time to reasonable speed (maybe function based on euclidian distance and goal max speed?)
+        total_time = 10 #TODO: needs to be updated to fit goal time to reasonable speed (maybe function based on euclidian distance and goal max speed?)
 
         if drone_received == target_received == True:
             trajectory = traj.minimum_jerk_pose(drone_location, target_location, frequency, total_time) #TODO: need to convert this into pose array data type
-
             traj_pub.publish(trajectory)
         
         r.sleep()

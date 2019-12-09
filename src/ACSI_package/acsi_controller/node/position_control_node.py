@@ -18,6 +18,7 @@ import numpy as np
 import tf
 from math import sin, cos, pi
 
+start_time = 0
 recieved_trajectory = False
 recieved_optitrack = False
 current_pose = Pose()
@@ -205,9 +206,9 @@ def optitrack_callback(opti_message):#
     recieved_optitrack = True
 
 def trajectory_callback(trajectory_in):#
-    global recieved_trajectory, trajectory
+    global recieved_trajectory, trajectory, start_time
 
-    if recieved_trajectory == False and len(trajectory_in.poses) > 2:
+    if recieved_trajectory == False and len(trajectory_in.poses) > 2 and rospy.Time.now().secs-start_time > 15:
         trajectory = trajectory_in
         recieved_trajectory = True
     
@@ -216,6 +217,7 @@ if __name__ == '__main__':
 
 
     rospy.init_node('position_controller_node')
+    start_time = rospy.Time.now().secs
     status_pub = rospy.Publisher('pid_controller/status',String,queue_size=2)
     
     setpoint_pub = rospy.Publisher('controller/ypr',Attitude_Setpoint,queue_size=2)
@@ -224,72 +226,60 @@ if __name__ == '__main__':
     error = [Attitude_Error()]
     integral = Attitude_Error()
 
-    desired_pose = Pose()
-    desired_pose.position.x = 0
-    desired_pose.position.y = 1.5
-    desired_pose.position.z = 0
-    desired_pose.orientation.x = 0
-    desired_pose.orientation.y = 0
-    desired_pose.orientation.z = 0
-    desired_pose.orientation.w = 1
+    hover_pose = Pose()
+    hover_pose.position.x = 0
+    hover_pose.position.y = 1.5
+    hover_pose.position.z = 0
+    hover_pose.orientation.x = 0
+    hover_pose.orientation.y = 0
+    hover_pose.orientation.z = 0
+    hover_pose.orientation.w = 1
 
-    desired_pose_2 = Pose()
-    desired_pose_2.position.x = 1
-    desired_pose_2.position.y = 1.5
-    desired_pose_2.position.z = 0
-    desired_pose_2.orientation.x = 0
-    desired_pose_2.orientation.y = 0
-    desired_pose_2.orientation.z = 0
-    desired_pose_2.orientation.w = 1
+    land_pose = Pose()
+    land_pose.position.x = 0
+    land_pose.position.y = -.5
+    land_pose.position.z = 0
+    land_pose.orientation.x = 0
+    land_pose.orientation.y = 0
+    land_pose.orientation.z = 0
+    land_pose.orientation.w = 1
 
-    desired_pose_3 = Pose()
-    desired_pose_3.position.x = 1
-    desired_pose_3.position.y = -.5
-    desired_pose_3.position.z = 0
-    desired_pose_3.orientation.x = 0
-    desired_pose_3.orientation.y = 0
-    desired_pose_3.orientation.z = 0
-    desired_pose_3.orientation.w = 1
-
-    test_setpoint = Attitude_Setpoint()
-    test_setpoint.pitch = 0
-    test_setpoint.roll = 0
-    test_setpoint.yaw_rate = 0
-    test_setpoint.thrust = 33000
+    desired_pose = hover_pose
 
     r = rospy.Rate(100)
     start_time = rospy.Time.now()
     sequence = 0
     while not rospy.is_shutdown():
+
+        if(recieved_trajectory == True and recieved_optitrack == True and sequence < len(trajectory.poses) and rospy.Time.now().secs-start_time > 16):
+            print('Trajectory Started')
+            desired_pose = trajectory.poses[sequence]
+            sequence = sequence + 1
+        elif(recieved_trajectory == True and recieved_optitrack == True and sequence >= len(trajectory.poses)):
+            print('Holding end')
+            desired_pose = trajectory.poses[-1]
+        elif rospy.Time.now().secs-start_time > 50:
+            print('landing')
+            land_pose.position.x = current_pose.position.x
+            land_pose.position.z = current_pose.position.z
+            land_pose.orientation.w = 1
+            desired_pose = land_pose
+        elif(recieved_trajectory == True and recieved_optitrack == True and sequence < len(trajectory.poses) and rospy.Time.now().secs-start_time < 16):
+            print('Trajectory recieved, waiting to begin')
+            desired_pose = hover_pose
+        elif(recieved_trajectory == True and recieved_optitrack == False):
+            print('Waiting for optitrak lock')
+            desired_pose = hover_pose    
+        elif(recieved_trajectory == False and recieved_optitrack == True):
+            print('Waiting for Trajectory')
+            desired_pose = hover_pose
+        else:
+            print('hovering')
+            desired_pose = hover_pose
+            
+
         current_setpoint = spin_controller(current_pose,desired_pose,error,integral)
-        if rospy.Time.now().secs-start_time.secs > 10 and rospy.Time.now().secs-start_time.secs < 20:
-            print('yaw control')
-            current_setpoint.yaw_rate = -45
         setpoint_pub.publish(current_setpoint)
-        # print(rospy.Time.now().secs-start_time.secs)
 
-        
-        #print(error[0])
-        #print(current_setpoint.thrust)
-
-        #print('Err x: ' + str(error[0].x) + '   -----   roll:' + str(current_setpoint.roll))
-        #print('Err y: ' + str(error[0].y) + '   -----   thrust:' + str(current_setpoint.thrust))
-        #print('Err z: ' + str(error[0].z) + '   -----   pitch:' + str(current_setpoint.pitch))
-        #print('Err yaw: ' + str(error[0].yaw) + '   -----   yaw_rate:' + str(current_setpoint.yaw_rate))
-
-        #if(recieved_trajectory == True and recieved_optitrack == True and sequence < len(trajectory.poses)):
-            #desired_pose = trajectory.poses[sequence]
-            #spin_controller(current_pose,desired_pose,error,integral)
-            #setpoint_pub.publish(current_setpoint)
-            #sequence = sequence + 1
-        #else:
-            #current_setpoint = spin_controller(current_pose,desired_pose,error,integral)
-
-            #setpoint_pub.publish(current_setpoint)
-            #spin_controller(current_pose,desired_pose,error,integral)
-
-
-
-        
         r.sleep()
 
